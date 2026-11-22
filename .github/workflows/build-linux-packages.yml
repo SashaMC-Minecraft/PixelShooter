@@ -1,4 +1,4 @@
-name: Build Linux Packages
+﻿name: Build Linux Packages
 
 on:
   workflow_dispatch:
@@ -28,7 +28,6 @@ jobs:
             --name PixelShooter --app-version 2.0 \
             --input pkg-in --main-jar PixelShooter.jar --main-class PixelShooter \
             --description "A java mini game - pixel shooter" \
-            --license LICENSE \
             --linux-deb-maintainer "313682119+SashaMC-Minecraft@users.noreply.github.com" \
             --linux-shortcut --linux-menu-group Game \
             --java-options "-Dsun.java2d.uiScale=1.0" \
@@ -43,7 +42,6 @@ jobs:
             --name PixelShooter --app-version 2.0 \
             --input pkg-in --main-jar PixelShooter.jar --main-class PixelShooter \
             --description "A java mini game - pixel shooter" \
-            --license LICENSE \
             --linux-shortcut --linux-menu-group Game \
             --java-options "-Dsun.java2d.uiScale=1.0" \
             --dest out
@@ -55,3 +53,4 @@ jobs:
           ls -la out/
           gh release upload v2.0 out/*.deb out/*.rpm --clobber
           gh release view v2.0
+
