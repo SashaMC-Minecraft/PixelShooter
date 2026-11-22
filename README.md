@@ -1,3 +1,4 @@
+![PixelShooterIcon](icon.png)
 # PixelShooter
 
 一款零依赖的 Java 像素射击小游戏：单文件源码、运行时合成芯片音效、无任何外部素材，Windows / macOS / Linux 一键安装包开箱即玩。
