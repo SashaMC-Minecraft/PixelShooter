@@ -37,7 +37,7 @@
 | --- | --- | --- |
 | Windows 10/11 (x64) | `PixelShooter-Windows-PatchEXE.zip` | 解压后运行 `PixelShooter\PixelShooter.exe` |
 | macOS (Apple Silicon M 系列) | `PixelShooter-macOS-AppleSilicon-v2.0.zip` | 解压后把 `PixelShooter.app` 拖入「应用程序」 |
-| macOS (Intel) | `PixelShooter-macOS-Intel-v2.0.zip` | 同上 |
+| macOS (Intel) | `PixelShooter-macOS-Intel-v2.0.zip` | 同上（该包构建排队中，上传前可先用 universal jar） |
 | Linux (Debian / Ubuntu / Deepin) | `pixelshooter_2.0_amd64.deb` | `sudo apt install ./pixelshooter_2.0_amd64.deb` |
 | Linux (Fedora / RHEL / openSUSE) | `pixelshooter-2.0-1.x86_64.rpm` | `sudo dnf install ./pixelshooter-2.0-1.x86_64.rpm` |
 | 任意装有 Java 11+ 的系统 | `PixelShooter-universal.jar` | `java -jar PixelShooter-universal.jar` |
