@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"
+     viewBox="0 0 32 32" shape-rendering="crispEdges"
+     role="img" aria-labelledby="ttl dsc">
+  <title id="ttl">Pixel Shooter 32px 桌面图标</title>
+  <desc id="dsc">32x32 原生像素网格：绿色飞船向上发射黄色子弹击中红色像素怪，配色取自 PixelShooter.java，四角透明圆角底板。</desc>
+  <rect x="1" y="1" width="30" height="30" rx="6" fill="#0A0C18" stroke="#33436B" stroke-width="1"/>
+
+  <!-- 深空星点 -->
+  <rect x="7" y="7" width="1" height="1" fill="#2D375A"/>
+  <rect x="10" y="6" width="1" height="1" fill="#2D375A"/>
+  <rect x="13" y="10" width="1" height="1" fill="#2D375A"/>
+  <rect x="6" y="13" width="1" height="1" fill="#2D375A"/>
+  <rect x="9" y="16" width="1" height="1" fill="#2D375A"/>
+  <rect x="12" y="7" width="1" height="1" fill="#2D375A"/>
+  <rect x="22" y="8" width="1" height="1" fill="#2D375A"/>
+  <rect x="25" y="12" width="1" height="1" fill="#2D375A"/>
+  <rect x="23" y="16" width="1" height="1" fill="#2D375A"/>
+  <rect x="26" y="19" width="1" height="1" fill="#2D375A"/>
+  <rect x="7" y="20" width="1" height="1" fill="#2D375A"/>
+  <rect x="10" y="22" width="1" height="1" fill="#2D375A"/>
+  <rect x="20" y="7" width="1" height="1" fill="#2D375A"/>
+  <rect x="17" y="13" width="1" height="1" fill="#2D375A"/>
+  <rect x="24" y="23" width="1" height="1" fill="#2D375A"/>
+  <rect x="6" y="24" width="1" height="1" fill="#2D375A"/>
+  <rect x="13" y="17" width="1" height="1" fill="#2D375A"/>
+
+  <!-- 亮星与十字光芒 -->
+  <rect x="8" y="10" width="1" height="1" fill="#96AAD2"/>
+  <rect x="24" y="7" width="1" height="1" fill="#96AAD2"/>
+  <rect x="11" y="14" width="1" height="1" fill="#96AAD2"/>
+  <rect x="21" y="19" width="1" height="1" fill="#96AAD2"/>
+  <rect x="5" y="17" width="1" height="1" fill="#96AAD2"/>
+  <rect x="26" y="15" width="1" height="1" fill="#96AAD2"/>
+  <rect x="7" y="10" width="1" height="1" fill="#4A5C8C"/>
+  <rect x="9" y="10" width="1" height="1" fill="#4A5C8C"/>
+  <rect x="8" y="9" width="1" height="1" fill="#4A5C8C"/>
+  <rect x="8" y="11" width="1" height="1" fill="#4A5C8C"/>
+  <rect x="23" y="7" width="1" height="1" fill="#4A5C8C"/>
+  <rect x="25" y="7" width="1" height="1" fill="#4A5C8C"/>
+  <rect x="24" y="6" width="1" height="1" fill="#4A5C8C"/>
+  <rect x="24" y="8" width="1" height="1" fill="#4A5C8C"/>
+
+  <!-- HUD：分数条 / 三条命 / 底部分隔线 -->
+  <rect x="6" y="6" width="3" height="1" fill="#96AAD2"/>
+  <rect x="10" y="6" width="2" height="1" fill="#96AAD2"/>
+  <rect x="6" y="8" width="5" height="1" fill="#4A5C8C"/>
+  <rect x="22" y="6" width="1" height="1" fill="#FF5064"/>
+  <rect x="24" y="6" width="1" height="1" fill="#FF5064"/>
+  <rect x="26" y="6" width="1" height="1" fill="#FF5064"/>
+  <rect x="4" y="27" width="7" height="1" fill="#2D375A"/>
+  <rect x="21" y="27" width="7" height="1" fill="#2D375A"/>
+
+  <!-- 敌方像素怪 -->
+  <rect x="14" y="8" width="7" height="5" fill="#DC3750"/>
+  <rect x="15" y="9" width="5" height="2" fill="#FF8C8C"/>
+  <rect x="14" y="12" width="7" height="1" fill="#A8273D"/>
+  <rect x="16" y="11" width="1" height="1" fill="#140810"/>
+  <rect x="18" y="11" width="1" height="1" fill="#140810"/>
+  <rect x="15" y="13" width="1" height="1" fill="#A8273D"/>
+  <rect x="19" y="13" width="1" height="1" fill="#A8273D"/>
+
+  <!-- 命中瞬间的爆散粒子 -->
+  <rect x="12" y="11" width="1" height="1" fill="#FF5A5A"/>
+  <rect x="13" y="13" width="1" height="1" fill="#FF5A5A"/>
+  <rect x="21" y="10" width="1" height="1" fill="#FF5A5A"/>
+  <rect x="22" y="13" width="1" height="1" fill="#FF5A5A"/>
+  <rect x="12" y="9" width="1" height="1" fill="#FFC83C"/>
+  <rect x="20" y="14" width="1" height="1" fill="#FFC83C"/>
+  <rect x="23" y="9" width="1" height="1" fill="#FFC83C"/>
+  <rect x="11" y="12" width="1" height="1" fill="#784028"/>
+  <rect x="22" y="8" width="1" height="1" fill="#784028"/>
+  <rect x="13" y="15" width="1" height="1" fill="#784028"/>
+
+  <!-- 黄色子弹与拖尾 -->
+  <rect x="15" y="16" width="1" height="3" fill="#FFEB5A"/>
+  <rect x="15" y="13" width="1" height="2" fill="#FFEB5A"/>
+  <rect x="15" y="15" width="1" height="1" fill="#B8A840"/>
+  <rect x="15" y="19" width="1" height="1" fill="#B8A840"/>
+
+  <!-- 玩家小飞船 -->
+  <rect x="14" y="20" width="4" height="3" fill="#3CDC82"/>
+  <rect x="11" y="23" width="10" height="3" fill="#3CDC82"/>
+  <rect x="11" y="25" width="10" height="1" fill="#229E62"/>
+  <rect x="15" y="23" width="2" height="2" fill="#E6FFF0"/>
+  <rect x="10" y="24" width="1" height="2" fill="#229E62"/>
+  <rect x="21" y="24" width="1" height="2" fill="#229E62"/>
+
+  <!-- 橙色尾焰与推进气 -->
+  <rect x="14" y="26" width="4" height="1" fill="#FF9632"/>
+  <rect x="15" y="26" width="2" height="1" fill="#FFC83C"/>
+  <rect x="15" y="27" width="2" height="1" fill="#FF9632"/>
+  <rect x="12" y="27" width="1" height="1" fill="#4A5C8C"/>
+  <rect x="19" y="27" width="1" height="1" fill="#4A5C8C"/>
+</svg>
