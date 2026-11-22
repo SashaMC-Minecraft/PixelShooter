@@ -1,0 +1,57 @@
+name: Build Linux Packages
+
+on:
+  workflow_dispatch:
+
+jobs:
+  linux-packages:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Compile and package jar
+        run: |
+          mkdir -p build/classes pkg-in out
+          javac -encoding UTF-8 -d build/classes src/PixelShooter.java
+          jar --create --file pkg-in/PixelShooter.jar --main-class PixelShooter -C build/classes .
+
+      - name: Build DEB
+        run: |
+          jpackage --type deb \
+            --name PixelShooter --app-version 2.0 \
+            --input pkg-in --main-jar PixelShooter.jar --main-class PixelShooter \
+            --description "A java mini game - pixel shooter" \
+            --license LICENSE \
+            --linux-deb-maintainer "313682119+SashaMC-Minecraft@users.noreply.github.com" \
+            --linux-shortcut --linux-menu-group Game \
+            --java-options "-Dsun.java2d.uiScale=1.0" \
+            --dest out
+
+      - name: Install rpmbuild (needed by jpackage for rpm)
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Build RPM
+        run: |
+          jpackage --type rpm \
+            --name PixelShooter --app-version 2.0 \
+            --input pkg-in --main-jar PixelShooter.jar --main-class PixelShooter \
+            --description "A java mini game - pixel shooter" \
+            --license LICENSE \
+            --linux-shortcut --linux-menu-group Game \
+            --java-options "-Dsun.java2d.uiScale=1.0" \
+            --dest out
+
+      - name: Upload assets to Release v2.0
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -la out/
+          gh release upload v2.0 out/*.deb out/*.rpm --clobber
+          gh release view v2.0
