@@ -3,48 +3,110 @@ import javax.sound.sampled.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
+import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Properties;
 import java.util.Random;
 import java.util.Set;
 import java.util.function.DoubleUnaryOperator;
 
 /**
- * 像素射击游戏 v2（单文件、零依赖、JDK 8+ 即可运行）
- * 音效由 javax.sound.sampled 实时合成 PCM，不需要任何 wav/mp3 素材。
+ * 像素射击游戏 v2.1（单文件、零依赖、JDK 8+ 即可运行）
  *
- * 玩法：
- *   - 敌人有 4 种：小兵、疾锋、重装、炮手，以及周期性登场并释放弹幕的 BOSS
- *   - 击落敌人有概率掉落道具：W 武器升级 / R 急速射击 / S 护盾 / B 全屏炸弹 / + 生命
- *   - 连续击杀形成连击，分数倍率最高 x4；分数推进关卡，出怪更快更凶
- *   - 最高分自动存档
+ * v2.1 新增：
+ *   - 标题界面：像素大标题、菜单按钮（单人 / 多人·实验性 / 设置 / 退出）
+ *   - 右上角地球图标一键切换语言：简体中文 / English / 日本語
+ *   - 多存档：3 个存档位各自记录最高分，可删除
+ *   - 设置持久化（语言、静音）到 ~/.pixelshooter/config.properties
+ *   - 右下角 Copyright (C) SashaMC 2026
  *
  * 编译运行：
  *   javac -encoding UTF-8 PixelShooter.java
  *   java PixelShooter
  *
- * 操作：← / → 或 A / D 移动，空格发射，P 或 ESC 暂停，R 随时重新开始，M 静音
+ * 操作：菜单 ↑/↓ + Enter 或鼠标点击；游戏内 ←→/AD 移动、空格发射、P 暂停、R 重开、M 静音
  */
 public class PixelShooter extends JPanel implements ActionListener, KeyListener {
 
-    // 低分辨率逻辑画布，放大后天然形成像素风
     static final int W = 200, H = 150, SCALE = 4;
+    static final String VERSION = "v2.1";
 
     private final BufferedImage canvas = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
     private static final Random rnd = new Random();
     private final Set<Integer> pressed = new HashSet<>();
-    private final Font font = new Font(Font.MONOSPACED, Font.PLAIN, 8);
-    private final Sfx sfx = new Sfx();          // 初始化时合成并预加载全部音效
+    private boolean upHeld, downHeld, enterHeld, escHeld, delHeld, muteHeld, pauseHeld, restartHeld, f11Held;
+    private final Font uiFont = new Font("SansSerif", Font.PLAIN, 9);
+    private final Font uiBold = new Font("SansSerif", Font.BOLD, 9);
+    private final Sfx sfx = new Sfx();
 
-    private boolean muteHeld, restartHeld, pauseHeld;   // 按键边沿检测
-    private enum State { START, PLAYING, PAUSED, OVER }
-    private State state = State.START;
+    private enum State { TITLE, SAVESEL, OPTIONS, MULTI, PLAYING, PAUSED, OVER }
+    private State state = State.TITLE;
 
-    // ---------- 实体 ----------
+    // ---------- 本地化 ----------
+    static final String[] LANG_NAMES = {"简体中文", "English", "日本語"};
+    static final String[] LANG_TAGS = {"中", "EN", "あ"};
+    private int lang;                       // 0=zh 1=en 2=ja
+    private static final Map<String, String[]> S = new HashMap<>();
+    private static void put(String k, String zh, String en, String ja) {
+        S.put(k, new String[]{zh, en, ja});
+    }
+    static {
+        put("single", "单人游戏", "Single Player", "シングルプレイ");
+        put("multi", "多人游戏", "Multiplayer", "マルチプレイ");
+        put("exp", "实验性", "Experimental", "実験的");
+        put("options", "设置选项", "Options", "オプション");
+        put("quit", "退出游戏", "Quit", "終了");
+        put("saves", "选择存档", "Select Save", "セーブ選択");
+        put("save", "存档", "Save", "セーブ");
+        put("best", "最高分", "Best", "ハイスコア");
+        put("empty", "空", "Empty", "なし");
+        put("back", "返回", "Back", "戻る");
+        put("language", "语言", "Language", "言語");
+        put("sound", "音效", "Sound", "サウンド");
+        put("fullscreen", "全屏", "Fullscreen", "全画面");
+        put("on", "开", "ON", "オン");
+        put("off", "关", "OFF", "オフ");
+        put("notice", "实验性功能，敬请期待", "Experimental - coming soon", "実験中の機能、お楽しみに");
+        put("anyback", "按任意键或点击返回", "Press any key or click to go back", "キークリックで戻る");
+        put("paused", "已暂停", "PAUSED", "一時停止");
+        put("resume", "P 继续", "P Resume", "P 再開");
+        put("restart", "R 重新开始", "R Restart", "R やり直し");
+        put("over", "游戏结束", "GAME OVER", "ゲームオーバー");
+        put("score", "分数", "SCORE", "スコア");
+        put("newrec", "新纪录！", "NEW RECORD!", "新記録!");
+        put("pressR", "按 R 重新开始", "Press R to restart", "Rキーで再開");
+        put("pressEsc", "按 ESC 回标题", "Press Esc for title", "Escでタイトルへ");
+        put("hintdel", "选中后按 Delete 或点 X 删除存档", "Delete key or X removes selected save", "DeleteまたはXで削除");
+        put("hintmouse", "鼠标或 ↑↓ + Enter 操作", "Mouse or ↑↓ + Enter", "マウス/↑↓+Enter");
+        put("del", "删除", "Delete", "削除");
+        put("new", "创建新存档", "New Save", "新規セーブ");
+    }
+    private String t(String k) {
+        String[] a = S.get(k);
+        return a == null ? k : a[lang];
+    }
+
+    // ---------- 存档（game/saves，无限数量）----------
+    private static final class SaveGame {
+        final int id;
+        int best;
+        SaveGame(int id, int best) { this.id = id; this.best = best; }
+    }
+    private final List<SaveGame> saves = new ArrayList<>();
+    private int saveSel, menuSel, optSel;      // saveSel = 列表行号
+    private int saveScroll;                     // 视口首行
+    private int currentSave = -1;               // 进行中的存档行号
+    private static final int SAVE_ROWS = 4;
+
+    // ---------- 实体（同 v2.0）----------
     private static final int T_GRUNT = 0, T_DARTER = 1, T_TANK = 2, T_GUNNER = 3, T_BOSS = 4;
     private static final int[] EW = {9, 7, 13, 10, 26};
     private static final int[] EH = {8, 6, 11, 9, 12};
@@ -73,7 +135,7 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
     }
     private static final class PowerUp {
         double x, y;
-        final int type;            // 0=W 1=R 2=S 3=B 4=L
+        final int type;
         PowerUp(double x, double y, int type) { this.x = x; this.y = y; this.type = type; }
     }
     private static final char[] PU_LETTER = {'W', 'R', 'S', 'B', '+'};
@@ -81,32 +143,92 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
             new Color(255, 235, 90), new Color(90, 200, 255),
             new Color(120, 255, 160), new Color(255, 140, 60), new Color(255, 90, 130)};
 
-    private final List<Bullet> shots = new ArrayList<>();       // 玩家子弹
-    private final List<Bullet> eshots = new ArrayList<>();      // 敌方子弹
+    private final List<Bullet> shots = new ArrayList<>();
+    private final List<Bullet> eshots = new ArrayList<>();
     private final List<Enemy> enemies = new ArrayList<>();
     private final List<Particle> particles = new ArrayList<>();
     private final List<PowerUp> powerups = new ArrayList<>();
-    private final int[][] stars = new int[48][3];               // {x, y, speed}
+    private final int[][] stars = new int[48][3];
 
     private int playerX = W / 2 - 5;
     private static final int PLAYER_Y = H - 16, PLAYER_W = 10, PLAYER_H = 8;
 
-    private int score, best, lives, level, cooldown, tick;
-    private int weapon = 1;             // 1 单发 / 2 双发 / 3 三向
+    private int score, lives, level, cooldown, tick;
+    private int weapon = 1;
     private int rapidTimer, shieldTimer, invTimer, combo, comboTimer, bossWarn, bombFx, shake;
     private boolean newRecord;
+
+    // 窗口 / 全屏
+    private JFrame frame;
+    private boolean fullscreen;
+    private Rectangle windowedBounds;
+
+    // 崩溃日志（game/crash-log/log-年-月-日-时-分.log）
+    private PrintStream logStream;
+    private Path logPath;
+
+    // 鼠标
+    private int mx = -1, my = -1;
 
     public PixelShooter() {
         setPreferredSize(new Dimension(W * SCALE, H * SCALE));
         setBackground(Color.BLACK);
         setFocusable(true);
         addKeyListener(this);
+        addMouseListener(new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent e) { handleClick(lx(e.getX()), ly(e.getY())); }
+        });
+        addMouseMotionListener(new MouseMotionAdapter() {
+            @Override public void mouseMoved(MouseEvent e) { mx = lx(e.getX()); my = ly(e.getY()); }
+            @Override public void mouseDragged(MouseEvent e) { mx = -1; my = -1; }
+        });
         for (int i = 0; i < stars.length; i++) {
             stars[i] = new int[]{rnd.nextInt(W), rnd.nextInt(H), 1 + rnd.nextInt(2)};
         }
-        best = loadBest();
+        loadData();
+        initCrashLog();
+        if (fullscreen) {
+            SwingUtilities.invokeLater(this::setFullscreen);
+        }
         reset();
-        new javax.swing.Timer(1000 / 60, this).start();   // 固定 60 FPS 逻辑帧
+        new javax.swing.Timer(1000 / 60, this).start();
+    }
+
+    // ---------- 崩溃日志 game/crash-log/log-YYYY-MM-dd-HH-mm.log ----------
+
+    private void initCrashLog() {
+        try {
+            Path dir = Paths.get("game", "crash-log").toAbsolutePath().normalize();
+            Files.createDirectories(dir);
+            String stamp = new SimpleDateFormat("yyyy-MM-dd-HH-mm").format(new Date());
+            logPath = dir.resolve("log-" + stamp + ".log");
+            logStream = new PrintStream(new FileOutputStream(logPath.toFile(), true), true, "UTF-8");
+            log("PixelShooter " + VERSION + " started | java " + System.getProperty("java.version")
+                    + " | " + System.getProperty("os.name") + " | cwd " + Paths.get("").toAbsolutePath());
+            log("log file: " + logPath);
+        } catch (Exception e) {
+            logStream = null;   // 日志不可用不影响游戏
+        }
+        Thread.setDefaultUncaughtExceptionHandler((t, ex) -> {
+            try {
+                log("UNCAUGHT on thread " + t.getName() + ": " + ex);
+                if (logStream != null) ex.printStackTrace(logStream);
+                ex.printStackTrace();
+            } catch (Exception ignored) { }
+        });
+    }
+
+    private void log(String msg) {
+        if (logStream != null) {
+            logStream.println("[" + new SimpleDateFormat("HH:mm:ss").format(new Date()) + "] " + msg);
+            logStream.flush();
+        }
+    }
+
+    private void closeLog(String msg) {
+        try { log(msg); } catch (Exception ignored) { }
+        try { if (logStream != null) logStream.close(); } catch (Exception ignored) { }
+        logStream = null;
     }
 
     private void reset() {
@@ -117,25 +239,106 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
         playerX = W / 2 - 5;
     }
 
-    // ---------- 最高分持久化 ----------
+    // ---------- 数据持久化 ----------
 
-    private static Path bestFile() {
-        return Paths.get(System.getProperty("user.home"), ".pixelshooter_hi.txt");
+    private static Path configDir() {
+        return Paths.get(System.getProperty("user.home"), ".pixelshooter");
     }
 
-    private int loadBest() {
+    /** 存档目录：运行目录下的 game/saves */
+    private static Path savesDir() {
+        return Paths.get("game", "saves").toAbsolutePath().normalize();
+    }
+
+    private void loadData() {
+        // 1) 全局设置（语言 / 静音）
+        Properties p = new Properties();
         try {
-            return Integer.parseInt(new String(Files.readAllBytes(bestFile()), StandardCharsets.UTF_8).trim());
-        } catch (Exception e) {
-            return 0;
+            Files.createDirectories(configDir());
+            Path f = configDir().resolve("config.properties");
+            if (Files.exists(f)) {
+                try (InputStream in = Files.newInputStream(f)) { p.load(in); }
+                lang = clamp(parseInt(p.getProperty("lang", "0"), 0), 0, 2);
+                sfx.setMuted(parseInt(p.getProperty("mute", "0"), 0) != 0);
+                fullscreen = parseInt(p.getProperty("fullscreen", "0"), 0) != 0;
+            }
+        } catch (Exception ignored) { }
+
+        // 2) 存档：game/saves/saves.dat，每行 "id=best"
+        try {
+            Files.createDirectories(savesDir());
+            Path f = savesFile();
+            if (Files.exists(f)) {
+                for (String line : Files.readAllLines(f, StandardCharsets.UTF_8)) {
+                    int eq = line.indexOf('=');
+                    if (eq <= 0) continue;
+                    int id = parseInt(line.substring(0, eq), -1);
+                    int best = parseInt(line.substring(eq + 1), 0);
+                    if (id > 0) saves.add(new SaveGame(id, Math.max(0, best)));
+                }
+            }
+            if (saves.isEmpty()) {
+                // 兼容迁移：v2.0 单文件最高分 / v2.1 三档位 -> 存档 1
+                int carried = 0;
+                Path old = Paths.get(System.getProperty("user.home"), ".pixelshooter_hi.txt");
+                if (Files.exists(old)) {
+                    carried = parseInt(new String(Files.readAllBytes(old), StandardCharsets.UTF_8).trim(), 0);
+                } else {
+                    carried = parseInt(p.getProperty("best0", "0"), 0);
+                }
+                saves.add(new SaveGame(1, Math.max(0, carried)));
+                saveData();
+            }
+        } catch (Exception ignored) {
+            saves.add(new SaveGame(1, 0));
         }
+        sortSaves();
     }
 
-    private void saveBest() {
+    private static Path savesFile() {
+        return savesDir().resolve("saves.dat");
+    }
+
+    private void sortSaves() {
+        saves.sort((a, b) -> Integer.compare(a.id, b.id));
+    }
+
+    private void saveData() {
+        Properties p = new Properties();
+        p.setProperty("lang", Integer.toString(lang));
+        p.setProperty("mute", sfx.isMuted() ? "1" : "0");
+        p.setProperty("fullscreen", fullscreen ? "1" : "0");
         try {
-            Files.write(bestFile(), Integer.toString(best).getBytes(StandardCharsets.UTF_8));
+            Files.createDirectories(configDir());
+            try (OutputStream out = Files.newOutputStream(configDir().resolve("config.properties"))) {
+                p.store(out, "PixelShooter " + VERSION + " config");
+            }
+        } catch (Exception ignored) { }
+
+        StringBuilder sb = new StringBuilder();
+        for (SaveGame s : saves) sb.append(s.id).append('=').append(s.best).append('\n');
+        try {
+            Files.createDirectories(savesDir());
+            Files.write(savesFile(), sb.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ignored) { }
     }
+
+    /** 在 game/saves 下新建一个从零开始的存档，返回行号 */
+    private int createSave() {
+        int maxId = 0;
+        for (SaveGame s : saves) maxId = Math.max(maxId, s.id);
+        saves.add(new SaveGame(maxId + 1, 0));
+        sortSaves();
+        saveData();
+        for (int i = 0; i < saves.size(); i++) if (saves.get(i).id == maxId + 1) return i;
+        return saves.size() - 1;
+    }
+
+    private static int parseInt(String s, int def) {
+        try { return Integer.parseInt(s.trim()); } catch (Exception e) { return def; }
+    }
+
+    private static int clamp(int v, int lo, int hi) { return Math.max(lo, Math.min(hi, v)); }
 
     // ---------- 逻辑 ----------
 
@@ -147,28 +350,64 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
         boolean fire = pressed.contains(KeyEvent.VK_SPACE);
 
         boolean m = pressed.contains(KeyEvent.VK_M);
-        if (m && !muteHeld) sfx.toggleMute();
+        if (m && !muteHeld) { sfx.toggleMute(); saveData(); }
         muteHeld = m;
 
-        boolean p = pressed.contains(KeyEvent.VK_P) || pressed.contains(KeyEvent.VK_ESCAPE);
-        if (p && !pauseHeld && (state == State.PLAYING || state == State.PAUSED)) {
-            state = state == State.PLAYING ? State.PAUSED : State.PLAYING;
+        boolean up = pressed.contains(KeyEvent.VK_UP) || pressed.contains(KeyEvent.VK_W);
+        boolean down = pressed.contains(KeyEvent.VK_DOWN) || pressed.contains(KeyEvent.VK_S);
+        boolean enter = pressed.contains(KeyEvent.VK_ENTER);
+        boolean esc = pressed.contains(KeyEvent.VK_ESCAPE);
+        boolean del = pressed.contains(KeyEvent.VK_DELETE);
+        boolean pause = pressed.contains(KeyEvent.VK_P);
+        boolean restart = pressed.contains(KeyEvent.VK_R);
+        boolean f11 = pressed.contains(KeyEvent.VK_F11);
+        if (f11 && !f11Held) toggleFullscreen();
+        f11Held = f11;
+        // 全屏时，游戏内 ESC 优先用于退出全屏
+        if (esc && !escHeld && fullscreen && state == State.PLAYING) {
+            toggleFullscreen();
+            escHeld = esc;
+            repaint();
+            return;
         }
-        pauseHeld = p;
 
-        // R：游戏内随时重新开始（对局中、暂停中、结束后均可）
-        boolean r = pressed.contains(KeyEvent.VK_R);
-        if (r && !restartHeld && state != State.START) {
-            reset();
-            state = State.PLAYING;
+        if (state != State.PLAYING) {
+            if (up && !upHeld) navMenu(-1);
+            if (down && !downHeld) navMenu(1);
+            if (enter && !enterHeld) activate();
+            if (del && !delHeld) deleteSlot();
         }
-        restartHeld = r;
+        upHeld = up; downHeld = down; enterHeld = enter; delHeld = del;
 
-        if (state == State.START && fire) state = State.PLAYING;
+        switch (state) {
+            case PLAYING: {
+                if (pause && !pauseHeld) state = State.PAUSED;
+                if (restart && !restartHeld) reset();
+                updateGame(left, right, fire);
+                break;
+            }
+            case PAUSED: {
+                if (restart && !restartHeld) { reset(); state = State.PLAYING; }
+                else if ((pause && !pauseHeld) || (esc && !escHeld)) state = State.PLAYING;
+                break;
+            }
+            case OVER: {
+                if (restart && !restartHeld) { reset(); state = State.PLAYING; }
+                else if (esc && !escHeld) state = State.TITLE;
+                break;
+            }
+            case MULTI: {
+                if (esc && !escHeld) state = State.TITLE;
+                break;
+            }
+            default: {
+                if (state == State.SAVESEL && esc && !escHeld) state = State.TITLE;
+                if (state == State.OPTIONS && esc && !escHeld) { state = State.TITLE; saveData(); }
+                break;
+            }
+        }
+        pauseHeld = pause; restartHeld = restart; escHeld = esc;
 
-        if (state == State.PLAYING) updateGame(left, right, fire);
-
-        // 粒子与星空在任何状态下都继续动画
         for (int i = particles.size() - 1; i >= 0; i--) {
             Particle pa = particles.get(i);
             pa.x += pa.vx; pa.y += pa.vy; pa.vy += 0.04;
@@ -183,8 +422,231 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
         repaint();
     }
 
+    private int menuCount() {
+        switch (state) {
+            case TITLE: return 4;
+            case SAVESEL: return saves.size();
+            case OPTIONS: return 4;
+            default: return 0;
+        }
+    }
+
+    private void navMenu(int d) {
+        int n = menuCount();
+        if (n == 0) return;
+        if (state == State.TITLE) menuSel = (menuSel + d + n) % n;
+        else if (state == State.SAVESEL) {
+            saveSel = clamp(saveSel + d, 0, n - 1);
+            if (saveSel < saveScroll) saveScroll = saveSel;
+            if (saveSel >= saveScroll + SAVE_ROWS) saveScroll = saveSel - SAVE_ROWS + 1;
+        }
+        else if (state == State.OPTIONS) optSel = (optSel + d + n) % n;
+    }
+
+    private void activate() {
+        switch (state) {
+            case TITLE:
+                if (menuSel == 0) { saveSel = Math.min(saveSel, Math.max(0, saves.size() - 1)); state = State.SAVESEL; }
+                else if (menuSel == 1) state = State.MULTI;
+                else if (menuSel == 2) { optSel = 0; state = State.OPTIONS; }
+                else quitGame();
+                break;
+            case SAVESEL:
+                if (saves.isEmpty() || saveSel >= saves.size()) return;
+                currentSave = saveSel;
+                reset();                     // 每个存档都从零开始
+                state = State.PLAYING;
+                break;
+            case OPTIONS:
+                if (optSel == 0) { lang = (lang + 1) % 3; saveData(); }
+                else if (optSel == 1) { sfx.toggleMute(); saveData(); }
+                else if (optSel == 2) { toggleFullscreen(); }
+                else { state = State.TITLE; saveData(); }
+                break;
+            case MULTI:
+                state = State.TITLE;
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void deleteSlot() {
+        if (state == State.SAVESEL && !saves.isEmpty()) {
+            saveSel = clamp(saveSel, 0, saves.size() - 1);
+            saves.remove(saveSel);
+            if (saveSel >= saves.size()) saveSel = Math.max(0, saves.size() - 1);
+            if (currentSave >= saves.size()) currentSave = -1;
+            saveData();
+            sfx.play(Sound.POWER);
+        }
+    }
+
+    private void newSave() {
+        int idx = createSave();
+        saveSel = idx;
+        if (saveSel >= saveScroll + SAVE_ROWS) saveScroll = saveSel - SAVE_ROWS + 1;
+        if (saveSel < saveScroll) saveScroll = saveSel;
+        sfx.play(Sound.POWER);
+    }
+
+    private int currentBest() {
+        return (currentSave >= 0 && currentSave < saves.size()) ? saves.get(currentSave).best : 0;
+    }
+
+    private void quitGame() {
+        saveData();
+        closeLog("quit by user");
+        Window w = SwingUtilities.getWindowAncestor(this);
+        if (w != null) w.dispose();
+        System.exit(0);
+    }
+
+    // ---------- 全屏 ----------
+
+    /** 逻辑坐标换算：兼容窗口与全屏两种缩放 */
+    private int lx(int px) { return getWidth() > 0 ? px * W / getWidth() : -1; }
+    private int ly(int py) { return getHeight() > 0 ? py * H / getHeight() : -1; }
+
+    void attachFrame(JFrame f) { this.frame = f; }
+
+    void toggleFullscreen() {
+        fullscreen = !fullscreen;
+        saveData();
+        if (fullscreen) setFullscreen();
+        else clearFullscreen();
+        log("fullscreen " + (fullscreen ? "ON" : "OFF"));
+    }
+
+    private void setFullscreen() {
+        if (frame == null || fullscreenGuard()) return;
+        GraphicsDevice dev = frame.getGraphicsConfiguration().getDevice();
+        if (!dev.isFullScreenSupported()) {
+            fullscreen = false;
+            log("fullscreen not supported by device, fallback to windowed");
+            return;
+        }
+        try {
+            if (!frame.isDisplayable()) {
+                windowedBounds = null;
+            } else {
+                windowedBounds = frame.getBounds();
+            }
+            frame.setVisible(false);
+            dev.setFullScreenWindow(frame);
+            frame.setVisible(true);
+            requestFocusInWindow();
+        } catch (Exception e) {
+            log("enter fullscreen failed: " + e);
+            fullscreen = false;
+            saveData();
+        }
+    }
+
+    private boolean fullscreenGuard() {
+        return frame == null;
+    }
+
+    private void clearFullscreen() {
+        if (frame == null) return;
+        GraphicsDevice dev = frame.getGraphicsConfiguration().getDevice();
+        try {
+            dev.setFullScreenWindow(null);
+            frame.setVisible(false);
+            if (windowedBounds != null) {
+                frame.setBounds(windowedBounds);
+            } else {
+                frame.setSize(W * SCALE, H * SCALE);
+                frame.setLocationRelativeTo(null);
+            }
+            frame.setVisible(true);
+            requestFocusInWindow();
+        } catch (Exception e) {
+            log("exit fullscreen failed: " + e);
+        }
+    }
+
+    // ---------- 鼠标 ----------
+
+    private void handleClick(int x, int y) {
+        switch (state) {
+            case TITLE: {
+                if (globeRect().contains(x, y)) {
+                    lang = (lang + 1) % 3;
+                    saveData();
+                    sfx.play(Sound.POWER);
+                    return;
+                }
+                Rectangle[] rs = titleBtnRects();
+                for (int i = 0; i < rs.length; i++) {
+                    if (rs[i].contains(x, y)) { menuSel = i; activate(); return; }
+                }
+                break;
+            }
+            case SAVESEL: {
+                for (int i = 0; i < SAVE_ROWS; i++) {
+                    int idx = saveScroll + i;
+                    if (idx >= saves.size()) break;
+                    if (saveRowRect(i).contains(x, y)) { saveSel = idx; activate(); return; }
+                    if (delRect(i).contains(x, y)) { saveSel = idx; deleteSlot(); return; }
+                }
+                if (upBtnRect().contains(x, y)) { scrollSaves(-1); return; }
+                if (dnBtnRect().contains(x, y)) { scrollSaves(1); return; }
+                if (newBtnRect().contains(x, y)) { newSave(); return; }
+                if (backRect().contains(x, y)) state = State.TITLE;
+                break;
+            }
+            case OPTIONS: {
+                Rectangle[] rows = optRowRects();
+                for (int i = 0; i < rows.length; i++) {
+                    if (rows[i].contains(x, y)) { optSel = i; activate(); return; }
+                }
+                break;
+            }
+            case MULTI:
+                state = State.TITLE;
+                break;
+            case OVER:
+                if (new Rectangle(40, H / 2 + 10, W - 80, 14).contains(x, y)) { reset(); state = State.PLAYING; }
+                break;
+            default:
+                break;
+        }
+    }
+
+    private Rectangle globeRect() { return new Rectangle(W - 18, 2, 14, 14); }
+
+    private Rectangle[] titleBtnRects() {
+        Rectangle[] rs = new Rectangle[4];
+        for (int i = 0; i < 4; i++) rs[i] = new Rectangle(W / 2 - 48, 66 + i * 15, 96, 13);
+        return rs;
+    }
+
+    // 存档页几何：4 行可见、上下滚动、新建 / 返回
+    private Rectangle saveRowRect(int vis) { return new Rectangle(20, 34 + vis * 13, 140, 11); }
+    private Rectangle delRect(int vis) { return new Rectangle(160, 34 + vis * 13, 10, 11); }
+    private Rectangle upBtnRect() { return new Rectangle(174, 34, 12, 12); }
+    private Rectangle dnBtnRect() { return new Rectangle(174, 73, 12, 12); }
+    private Rectangle newBtnRect() { return new Rectangle(20, 92, 78, 13); }
+    private Rectangle backBtn2Rect() { return new Rectangle(102, 92, 78, 13); }
+
+    private void scrollSaves(int d) {
+        int maxScroll = Math.max(0, saves.size() - SAVE_ROWS);
+        saveScroll = clamp(saveScroll + d, 0, maxScroll);
+        if (!saves.isEmpty()) saveSel = clamp(saveSel, saveScroll, Math.min(saveScroll + SAVE_ROWS - 1, saves.size() - 1));
+    }
+
+    private Rectangle backRect() { return new Rectangle(W / 2 - 24, 100, 48, 13); }
+
+    private Rectangle[] optRowRects() {
+        Rectangle[] rs = new Rectangle[4];
+        for (int i = 0; i < 4; i++) rs[i] = new Rectangle(30, 48 + i * 16, W - 60, 14);
+        return rs;
+    }
+
+    // ---------- 游戏逻辑（v2.0 延续）----------
+
     private void updateGame(boolean left, boolean right, boolean fire) {
-        // 计时器
         if (rapidTimer > 0) rapidTimer--;
         if (shieldTimer > 0) shieldTimer--;
         if (invTimer > 0) invTimer--;
@@ -193,12 +655,10 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
 
         level = 1 + score / 120;
 
-        // 玩家移动
         if (left) playerX -= 2;
         if (right) playerX += 2;
         playerX = Math.max(2, Math.min(W - PLAYER_W - 2, playerX));
 
-        // 射击
         if (fire && cooldown <= 0) {
             int cx = playerX + PLAYER_W / 2;
             int y = PLAYER_Y - 4;
@@ -223,7 +683,6 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
             if (b.y < -6 || b.x < -4 || b.x > W + 4) shots.remove(i);
         }
 
-        // 出怪：关卡越高越快；每 30 秒刷一只 BOSS
         boolean bossAlive = false;
         for (Enemy en : enemies) if (en.type == T_BOSS) { bossAlive = true; break; }
         if (!bossAlive && tick > 600 && tick % 1800 == 0) {
@@ -231,12 +690,11 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
             bossWarn = 90;
             sfx.play(Sound.BOOM);
         }
-        if (!bossAlive || tick % 240 == 0) {   // BOSS 在场时杂兵减半
+        if (!bossAlive || tick % 240 == 0) {
             int interval = Math.max(16, 70 - level * 6);
             if (tick % interval == 0) spawnEnemy();
         }
 
-        // 敌人行为
         for (int i = enemies.size() - 1; i >= 0; i--) {
             Enemy en = enemies.get(i);
             if (en.hitFlash > 0) en.hitFlash--;
@@ -275,7 +733,6 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
             }
             en.x = Math.max(2, Math.min(W - EW[en.type] - 2, en.x));
 
-            // 玩家子弹命中
             boolean dead = false;
             for (int j = shots.size() - 1; j >= 0; j--) {
                 Bullet b = shots.get(j);
@@ -288,7 +745,6 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
             }
             if (dead) { killEnemy(en, i); continue; }
 
-            // 撞到玩家
             if (hit(playerX, PLAYER_Y, PLAYER_W, PLAYER_H, en.x, en.y, EW[en.type], EH[en.type])) {
                 enemies.remove(i);
                 if (shieldTimer > 0) {
@@ -299,7 +755,6 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
                 }
                 continue;
             }
-            // 漏过底线
             if (en.y > H) {
                 enemies.remove(i);
                 if (en.type != T_BOSS) {
@@ -309,7 +764,6 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
             }
         }
 
-        // 敌方子弹命中玩家
         for (int i = eshots.size() - 1; i >= 0; i--) {
             Bullet b = eshots.get(i);
             b.x += b.vx; b.y += b.vy;
@@ -324,7 +778,6 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
             }
         }
 
-        // 道具下落与拾取
         for (int i = powerups.size() - 1; i >= 0; i--) {
             PowerUp pu = powerups.get(i);
             pu.y += 0.8;
@@ -336,9 +789,7 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
         }
     }
 
-    private int bossHpMax() {
-        return Math.min(14 + level * 4, 40);
-    }
+    private int bossHpMax() { return Math.min(14 + level * 4, 40); }
 
     private void spawnEnemy() {
         int type;
@@ -365,7 +816,6 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
                 en.type == T_BOSS ? 40 : 10, en.type == T_BOSS ? 3.0 : 2.2);
         sfx.play(en.type == T_BOSS ? Sound.BOOM : Sound.HIT);
         if (en.type == T_BOSS) shake = 14;
-        // 掉落：BOSS 必掉两个，小怪 12%
         int drops = en.type == T_BOSS ? 2 : (rnd.nextDouble() < 0.12 ? 1 : 0);
         for (int d = 0; d < drops; d++) {
             powerups.add(new PowerUp(en.x + rnd.nextInt(6), en.y, rollPowerUp()));
@@ -374,11 +824,11 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
 
     private int rollPowerUp() {
         int roll = rnd.nextInt(100);
-        if (lives < 5 && roll < 10) return 4;              // +1 命
-        if (roll < 25) return 3;                            // 炸弹
-        if (roll < 45) return 2;                            // 护盾
-        if (roll < 70) return 1;                            // 急速
-        return 0;                                           // 武器
+        if (lives < 5 && roll < 10) return 4;
+        if (roll < 25) return 3;
+        if (roll < 45) return 2;
+        if (roll < 70) return 1;
+        return 0;
     }
 
     private void applyPowerUp(int type) {
@@ -393,13 +843,12 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
         }
     }
 
-    /** 全屏炸弹：清空敌机与敌方子弹 */
     private void detonate() {
         bombFx = 10; shake = 10;
         sfx.play(Sound.BOOM);
         for (int i = enemies.size() - 1; i >= 0; i--) {
             Enemy en = enemies.get(i);
-            if (en.type == T_BOSS) {   // BOSS 只掉 6 血不清场
+            if (en.type == T_BOSS) {
                 en.hp -= 6;
                 if (en.hp <= 0) killEnemy(en, i);
                 continue;
@@ -418,7 +867,11 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
         if (--lives <= 0) {
             lives = 0;
             state = State.OVER;
-            if (score > best) { best = score; newRecord = true; saveBest(); }
+            if (currentSave >= 0 && currentSave < saves.size() && score > saves.get(currentSave).best) {
+                saves.get(currentSave).best = score;
+                newRecord = true;
+            }
+            saveData();
         }
     }
 
@@ -442,74 +895,19 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
     protected void paintComponent(Graphics gr) {
         super.paintComponent(gr);
         Graphics2D g = canvas.createGraphics();
-        g.setFont(font);
+        g.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
         g.setColor(new Color(10, 12, 24));
         g.fillRect(0, 0, W, H);
         g.setColor(new Color(45, 55, 90));
         for (int[] s : stars) g.fillRect(s[0], s[1], 1, 1);
 
-        // 屏幕震动
-        if (shake > 0) g.translate(rnd.nextInt(3) - 1, rnd.nextInt(3) - 1);
-
-        drawEnemies(g);
-        drawPowerUps(g);
-
-        // 子弹
-        g.setColor(new Color(255, 235, 90));
-        for (Bullet b : shots) g.fillRect((int) b.x, (int) b.y, 2, 4);
-        g.setColor(new Color(255, 100, 220));
-        for (Bullet b : eshots) g.fillRect((int) b.x, (int) b.y, 2, 3);
-
-        drawPlayer(g);
-
-        // 粒子
-        for (Particle p : particles) {
-            g.setColor(p.life > 8 ? p.c : new Color(120, 60, 40));
-            g.fillRect((int) p.x, (int) p.y, 2, 2);
-        }
-
-        // BOSS 警告
-        if (bossWarn > 0 && (bossWarn / 10) % 2 == 0) {
-            g.setColor(new Color(255, 70, 70));
-            center(g, "! BOSS INCOMING !", H / 2 - 26, 9);
-        }
-
-        drawHud(g);
-
-        // 炸弹白闪（覆盖在菜单遮罩之前绘制，避免遮挡文字）
-        if (bombFx > 0) {
-            g.setColor(new Color(255, 255, 255, bombFx * 18));
-            g.fillRect(-4, -4, W + 8, H + 8);
-        }
-
-        if (state == State.START || state == State.OVER || state == State.PAUSED) {
-            g.setColor(new Color(0, 0, 0, 170));
-            g.fillRect(-4, -4, W + 8, H + 8);
-            if (state == State.PAUSED) {
-                g.setColor(new Color(120, 200, 255));
-                center(g, "PAUSED", H / 2 - 10, 10);
-                g.setColor(Color.WHITE);
-                center(g, "P RESUME   R RESTART", H / 2 + 10, 8);
-            } else {
-                g.setColor(state == State.OVER ? new Color(255, 90, 90) : new Color(90, 230, 160));
-                center(g, state == State.OVER ? "GAME OVER" : "PIXEL SHOOTER", H / 2 - 26, 10);
-                g.setColor(Color.WHITE);
-                if (state == State.OVER) {
-                    center(g, "SCORE " + score + "   BEST " + best, H / 2 - 10, 8);
-                    if (newRecord) {
-                        g.setColor(new Color(255, 235, 90));
-                        center(g, "* NEW RECORD *", H / 2 + 2, 8);
-                    }
-                    center(g, "PRESS R TO RESTART", H / 2 + 16, 8);
-                } else {
-                    center(g, "BEST " + best, H / 2 - 12, 8);
-                    center(g, "PRESS SPACE TO START", H / 2 + 2, 8);
-                }
-                g.setColor(new Color(160, 175, 205));
-                center(g, "AD/<> MOVE  SPACE FIRE  P PAUSE", H / 2 + 32, 7);
-                center(g, "R RESTART   M MUTE", H / 2 + 42, 7);
-            }
+        switch (state) {
+            case TITLE: drawTitle(g); break;
+            case SAVESEL: drawSaves(g); break;
+            case OPTIONS: drawOptions(g); break;
+            case MULTI: drawMulti(g); break;
+            default: drawGame(g); break;
         }
 
         g.dispose();
@@ -517,6 +915,263 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
         g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                 RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
         g2.drawImage(canvas, 0, 0, getWidth(), getHeight(), null);
+    }
+
+    // ---------- 标题界面 ----------
+
+    private void drawTitle(Graphics2D g) {
+        drawLogo(g, 16);
+
+        g.setColor(new Color(140, 160, 200));
+        g.setFont(uiFont);
+        String ver = VERSION + " - " + t("hintmouse");
+        center(g, ver, 52, uiFont);
+
+        Rectangle[] rs = titleBtnRects();
+        String[] labels = {
+                t("single"),
+                t("multi") + " (" + t("exp") + ")",
+                t("options"),
+                t("quit")};
+        for (int i = 0; i < 4; i++) {
+            boolean hot = i == menuSel || rs[i].contains(mx, my);
+            drawButton(g, rs[i], labels[i], hot, i == menuSel);
+        }
+
+        drawGlobe(g);
+
+        g.setColor(new Color(120, 130, 160));
+        g.setFont(uiFont);
+        g.drawString("Copyright (C) SashaMC 2026", W - g.getFontMetrics().stringWidth("Copyright (C) SashaMC 2026") - 4, H - 4);
+    }
+
+    private void drawButton(Graphics2D g, Rectangle r, String label, boolean hot, boolean sel) {
+        g.setColor(hot ? new Color(40, 90, 60) : new Color(26, 32, 54));
+        g.fillRect(r.x, r.y, r.width, r.height);
+        g.setColor(hot ? new Color(120, 255, 160) : new Color(80, 95, 140));
+        g.drawRect(r.x, r.y, r.width - 1, r.height - 1);
+        if (sel) {
+            g.setColor(new Color(255, 235, 90));
+            g.fillRect(r.x + 3, r.y + r.height / 2 - 1, 2, 2);
+        }
+        g.setColor(hot ? Color.WHITE : new Color(190, 200, 225));
+        g.setFont(hot ? uiBold : uiFont);
+        FontMetrics fm = g.getFontMetrics();
+        g.drawString(label, r.x + (r.width - fm.stringWidth(label)) / 2, r.y + (r.height + fm.getAscent() - 2) / 2);
+    }
+
+    /** 右上角手绘像素地球：点击切语言 */
+    private void drawGlobe(Graphics2D g) {
+        Rectangle r = globeRect();
+        boolean hot = r.contains(mx, my);
+        int cx = r.x + r.width / 2, cy = r.y + r.height / 2, rad = 6;
+        g.setColor(hot ? new Color(140, 200, 255) : new Color(70, 110, 170));
+        g.fillOval(cx - rad, cy - rad, rad * 2, rad * 2);
+        g.setColor(new Color(60, 160, 80));                 // 大陆块
+        g.fillRect(cx - 4, cy - 3, 3, 2);
+        g.fillRect(cx + 1, cy - 1, 2, 3);
+        g.fillRect(cx - 2, cy + 2, 2, 2);
+        g.setColor(new Color(230, 245, 255, hot ? 200 : 130)); // 经线
+        g.drawOval(cx - rad, cy - rad, rad * 2 - 1, rad * 2 - 1);
+        g.drawOval(cx - 2, cy - rad, 5, rad * 2 - 1);
+        g.drawLine(cx - rad, cy, cx + rad, cy);
+        g.setColor(hot ? Color.WHITE : new Color(180, 200, 230));
+        g.setFont(uiFont);
+        FontMetrics fm2 = g.getFontMetrics();
+        g.drawString(LANG_TAGS[lang], r.x + r.width / 2 - fm2.stringWidth(LANG_TAGS[lang]) / 2, r.y + r.height + 8);
+    }
+
+    /** 像素大标题：自绘 5x7 位图字体 + 流动彩虹色 */
+    private static final Map<Character, String[]> PIXFONT = new HashMap<>();
+    static {
+        PIXFONT.put('P', new String[]{"11110", "10001", "10001", "11110", "10000", "10000", "10000"});
+        PIXFONT.put('I', new String[]{"11111", "00100", "00100", "00100", "00100", "00100", "11111"});
+        PIXFONT.put('X', new String[]{"10001", "10001", "01010", "00100", "01010", "10001", "10001"});
+        PIXFONT.put('E', new String[]{"11111", "10000", "10000", "11110", "10000", "10000", "11111"});
+        PIXFONT.put('L', new String[]{"10000", "10000", "10000", "10000", "10000", "10000", "11111"});
+        PIXFONT.put('S', new String[]{"01111", "10000", "10000", "01110", "00001", "00001", "11110"});
+        PIXFONT.put('H', new String[]{"10001", "10001", "10001", "11111", "10001", "10001", "10001"});
+        PIXFONT.put('O', new String[]{"01110", "10001", "10001", "10001", "10001", "10001", "01110"});
+        PIXFONT.put('T', new String[]{"11111", "00100", "00100", "00100", "00100", "00100", "00100"});
+        PIXFONT.put('R', new String[]{"11110", "10001", "10001", "11110", "10100", "10010", "10001"});
+    }
+
+    private void drawLogo(Graphics2D g, int top) {
+        String text = "PIXELSHOOTER";
+        int scale = 2, gap = 1;
+        int glyphW = 5 * scale, glyphH = 7 * scale;
+        int totalW = text.length() * (glyphW + gap * scale) - gap * scale;
+        int x0 = (W - totalW) / 2;
+        for (int c = 0; c < text.length(); c++) {
+            String[] rows = PIXFONT.get(text.charAt(c));
+            for (int row = 0; row < 7; row++) {
+                for (int col = 0; col < 5; col++) {
+                    if (rows[row].charAt(col) != '1') continue;
+                    int px = x0 + c * (glyphW + gap * scale) + col * scale;
+                    int py = top + row * scale;
+                    float hue = ((px + c * 4 + tick * 0.5f) % 72f) / 72f;
+                    g.setColor(Color.getHSBColor(hue, 0.75f, 1.0f));
+                    g.fillRect(px, py, scale, scale);
+                    g.setColor(new Color(255, 255, 255, 90));
+                    g.fillRect(px, py, 1, 1);
+                }
+            }
+        }
+    }
+
+    // ---------- 存档选择 ----------
+
+    private void drawSaves(Graphics2D g) {
+        g.setColor(Color.WHITE);
+        g.setFont(uiBold);
+        center(g, t("saves"), 24, uiBold);
+
+        for (int vis = 0; vis < SAVE_ROWS; vis++) {
+            int idx = saveScroll + vis;
+            if (idx >= saves.size()) break;
+            SaveGame sv = saves.get(idx);
+            Rectangle rr = saveRowRect(vis);
+            boolean hot = idx == saveSel || rr.contains(mx, my);
+            g.setColor(hot ? new Color(40, 60, 110) : new Color(24, 30, 52));
+            g.fillRect(rr.x, rr.y, rr.width, rr.height);
+            g.setColor(hot ? new Color(150, 200, 255) : new Color(70, 85, 125));
+            g.drawRect(rr.x, rr.y, rr.width - 1, rr.height - 1);
+
+            g.setFont(hot ? uiBold : uiFont);
+            g.setColor(Color.WHITE);
+            g.drawString(t("save") + " " + sv.id, rr.x + 5, rr.y + 9);
+            g.setColor(sv.best > 0 ? new Color(255, 235, 90) : new Color(120, 130, 160));
+            String bs = sv.best > 0 ? Integer.toString(sv.best) : t("empty");
+            FontMetrics fm = g.getFontMetrics();
+            g.drawString(bs, rr.x + rr.width - fm.stringWidth(bs) - 5, rr.y + 9);
+
+            Rectangle dr = delRect(vis);
+            g.setColor(new Color(60, 30, 40));
+            g.fillRect(dr.x, dr.y, dr.width, dr.height);
+            g.setColor(new Color(255, 100, 110));
+            g.drawRect(dr.x, dr.y, dr.width - 1, dr.height - 1);
+            g.setFont(uiBold);
+            g.drawString("x", dr.x + 3, dr.y + 9);
+        }
+
+        drawScrollBtn(g, upBtnRect(), "^", saveScroll > 0);
+        drawScrollBtn(g, dnBtnRect(), "v", saveScroll + SAVE_ROWS < saves.size());
+
+        Rectangle nb = newBtnRect();
+        drawButton(g, nb, "+ " + t("new"), nb.contains(mx, my), false);
+        Rectangle bk = backBtn2Rect();
+        drawButton(g, bk, "< " + t("back"), bk.contains(mx, my), false);
+
+        g.setColor(new Color(110, 125, 155));
+        g.setFont(uiFont);
+        center(g, t("save") + " " + (saves.isEmpty() ? 0 : saves.get(clamp(saveSel, 0, saves.size() - 1)).id)
+                + "  (" + saves.size() + ")", 118, uiFont);
+        g.setColor(new Color(120, 130, 160));
+        center(g, t("hintdel"), 130, uiFont);
+    }
+
+    private void drawScrollBtn(Graphics2D g, Rectangle r, String label, boolean enabled) {
+        g.setColor(new Color(24, 30, 52));
+        g.fillRect(r.x, r.y, r.width, r.height);
+        g.setColor(enabled ? new Color(150, 200, 255) : new Color(55, 65, 90));
+        g.drawRect(r.x, r.y, r.width - 1, r.height - 1);
+        if (!enabled) return;
+        g.setColor(Color.WHITE);
+        g.setFont(uiBold);
+        FontMetrics fm = g.getFontMetrics();
+        g.drawString(label, r.x + (r.width - fm.stringWidth(label)) / 2, r.y + (r.height + fm.getAscent() - 3) / 2);
+    }
+
+    // ---------- 设置 ----------
+
+    private void drawOptions(Graphics2D g) {
+        g.setColor(Color.WHITE);
+        g.setFont(uiBold);
+        center(g, t("options"), 26, uiBold);
+
+        String[] labels = {
+                t("language") + ": " + LANG_NAMES[lang],
+                t("sound") + ": " + (sfx.isMuted() ? t("off") : t("on")),
+                t("fullscreen") + ": " + (fullscreen ? t("on") : t("off")),
+                "< " + t("back")};
+        Rectangle[] rows = optRowRects();
+        for (int i = 0; i < rows.length; i++) {
+            boolean hot = i == optSel || rows[i].contains(mx, my);
+            drawButton(g, rows[i], labels[i], hot, i == optSel);
+        }
+    }
+
+    // ---------- 多人（占位）----------
+
+    private void drawMulti(Graphics2D g) {
+        g.setColor(Color.WHITE);
+        g.setFont(uiBold);
+        center(g, t("multi") + " (" + t("exp") + ")", 56, uiBold);
+        g.setColor(new Color(255, 200, 90));
+        g.setFont(uiFont);
+        center(g, t("notice"), 76, uiFont);
+        g.setColor(new Color(120, 130, 160));
+        center(g, t("anyback"), 100, uiFont);
+    }
+
+    // ---------- 游戏画面 ----------
+
+    private void drawGame(Graphics2D g) {
+        if (shake > 0) g.translate(rnd.nextInt(3) - 1, rnd.nextInt(3) - 1);
+
+        drawEnemies(g);
+        drawPowerUps(g);
+
+        g.setColor(new Color(255, 235, 90));
+        for (Bullet b : shots) g.fillRect((int) b.x, (int) b.y, 2, 4);
+        g.setColor(new Color(255, 100, 220));
+        for (Bullet b : eshots) g.fillRect((int) b.x, (int) b.y, 2, 3);
+
+        drawPlayer(g);
+
+        for (Particle p : particles) {
+            g.setColor(p.life > 8 ? p.c : new Color(120, 60, 40));
+            g.fillRect((int) p.x, (int) p.y, 2, 2);
+        }
+
+        if (bossWarn > 0 && (bossWarn / 10) % 2 == 0) {
+            g.setColor(new Color(255, 70, 70));
+            g.setFont(uiBold);
+            center(g, "! BOSS INCOMING !", H / 2 - 26, uiBold);
+        }
+
+        drawHud(g);
+
+        if (bombFx > 0) {
+            g.setColor(new Color(255, 255, 255, bombFx * 18));
+            g.fillRect(-4, -4, W + 8, H + 8);
+        }
+
+        if (state == State.PAUSED || state == State.OVER) {
+            g.setColor(new Color(0, 0, 0, 170));
+            g.fillRect(-4, -4, W + 8, H + 8);
+            if (state == State.PAUSED) {
+                g.setColor(new Color(120, 200, 255));
+                g.setFont(uiBold);
+                center(g, t("paused"), H / 2 - 10, uiBold);
+                g.setColor(Color.WHITE);
+                g.setFont(uiFont);
+                center(g, t("resume") + "   " + t("restart"), H / 2 + 10, uiFont);
+            } else {
+                g.setColor(new Color(255, 90, 90));
+                g.setFont(uiBold);
+                center(g, t("over"), H / 2 - 30, uiBold);
+                g.setColor(Color.WHITE);
+                g.setFont(uiFont);
+                center(g, t("score") + " " + score + "   " + t("best") + " " + currentBest(), H / 2 - 12, uiFont);
+                if (newRecord) {
+                    g.setColor(new Color(255, 235, 90));
+                    center(g, t("newrec"), H / 2, uiFont);
+                }
+                Rectangle rb = new Rectangle(40, H / 2 + 10, W - 80, 14);
+                drawButton(g, rb, t("restart") + " / " + t("pressEsc"), rb.contains(mx, my), false);
+            }
+        }
     }
 
     private void drawEnemies(Graphics2D g) {
@@ -565,7 +1220,6 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
                     g.fillRect(x + 20, y + 3, 4, 4);
                     g.setColor(new Color(255, 235, 120));
                     g.fillRect(x + 11, y + 3, 4, 4);
-                    // BOSS 血条
                     g.setColor(new Color(60, 20, 20));
                     g.fillRect(20, H - 8, W - 40, 2);
                     g.setColor(new Color(255, 70, 70));
@@ -587,17 +1241,16 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
             g.fillRect(x + 1, y + 1, 1, 1);
             g.fillRect(x + 6, y + 6, 1, 1);
             g.setColor(Color.WHITE);
-            g.setFont(new Font(Font.MONOSPACED, Font.BOLD, 6));
+            g.setFont(uiBold);
             FontMetrics fm = g.getFontMetrics();
             char ch = PU_LETTER[pu.type];
-            g.drawString(String.valueOf(ch), x + (8 - fm.charWidth(ch)) / 2, y + 6);
+            g.drawString(String.valueOf(ch), x + (8 - fm.charWidth(ch)) / 2, y + 7);
         }
-        g.setFont(font);
     }
 
     private void drawPlayer(Graphics2D g) {
         if (state == State.OVER) return;
-        if (invTimer > 0 && (tick / 4) % 2 == 0) return;   // 受击闪烁
+        if (invTimer > 0 && (tick / 4) % 2 == 0) return;
         g.setColor(new Color(60, 220, 130));
         g.fillRect(playerX + 3, PLAYER_Y - 3, 4, 4);
         g.fillRect(playerX, PLAYER_Y, PLAYER_W, 5);
@@ -617,17 +1270,17 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
     private void drawHud(Graphics2D g) {
         g.setColor(new Color(150, 170, 210));
         g.fillRect(0, H - 3, W, 1);
+        g.setFont(uiFont);
         g.setColor(Color.WHITE);
-        g.drawString(String.format("SCORE %04d", score), 4, 10);
-        g.drawString(String.format("BEST %04d", best), 4, 19);
+        g.drawString(String.format("%s %04d", t("score"), score), 4, 10);
+        g.drawString(String.format("%s %04d", t("best"), currentBest()), 4, 19);
         g.setColor(new Color(110, 130, 170));
-        g.drawString("LV" + level + " WPN" + weapon, 4, 28);
-        g.drawString(sfx.isMuted() ? "SFX OFF (M)" : "SFX ON  (M)", 4, 37);
+        g.drawString("LV" + level + " WPN" + weapon + "  " + t("save") + (currentSave >= 0 && currentSave < saves.size() ? " " + saves.get(currentSave).id : ""), 4, 28);
 
         int mult = 1 + Math.min(combo / 5, 3);
         if (mult > 1) {
             g.setColor(new Color(255, 235, 90));
-            g.drawString("COMBO x" + mult, 4, 46);
+            g.drawString("COMBO x" + mult, 4, 37);
         }
 
         g.setColor(new Color(255, 80, 100));
@@ -644,8 +1297,8 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
         }
     }
 
-    private void center(Graphics2D g, String s, int y, int size) {
-        g.setFont(new Font(Font.MONOSPACED, Font.BOLD, size));
+    private void center(Graphics2D g, String s, int y, Font f) {
+        g.setFont(f);
         FontMetrics fm = g.getFontMetrics();
         g.drawString(s, (W - fm.stringWidth(s)) / 2, y);
     }
@@ -660,10 +1313,19 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
-            JFrame f = new JFrame("Pixel Shooter");
-            f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-            f.setResizable(false);
+            JFrame f = new JFrame("Pixel Shooter " + VERSION);
             PixelShooter game = new PixelShooter();
+            game.attachFrame(f);
+            f.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+            f.addWindowListener(new WindowAdapter() {
+                @Override public void windowClosing(WindowEvent e) {
+                    game.saveData();
+                    game.closeLog("window closing (tick=" + game.tick + " state=" + game.state + ")");
+                    e.getWindow().dispose();
+                    System.exit(0);
+                }
+            });
+            f.setResizable(false);
             f.add(game);
             f.pack();
             f.setLocationRelativeTo(null);
@@ -672,15 +1334,13 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
         });
     }
 
-    // ---------- 音效：运行时合成 PCM，无需任何 wav/mp3 素材 ----------
+    // ---------- 音效 ----------
 
     private enum Sound { SHOOT, HIT, LOSE, POWER, BOOM }
 
     private static final class Sfx {
-        // 44.1kHz / 16-bit / 单声道 / 有符号小端
-        private static final AudioFormat FORMAT =
-                new AudioFormat(44100f, 16, 1, true, false);
-        private static final int POOL = 4;   // 每种音效多个 Clip 轮换，连发不互相打断
+        private static final AudioFormat FORMAT = new AudioFormat(44100f, 16, 1, true, false);
+        private static final int POOL = 4;
 
         private final Clip[][] bank = new Clip[Sound.values().length][POOL];
         private final int[] cursor = new int[Sound.values().length];
@@ -692,14 +1352,10 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
                 for (int i = 0; i < POOL; i++) {
                     try {
                         Clip c = AudioSystem.getClip();
-                        c.open(new AudioInputStream(
-                                new ByteArrayInputStream(pcm), FORMAT,
+                        c.open(new AudioInputStream(new ByteArrayInputStream(pcm), FORMAT,
                                 pcm.length / FORMAT.getFrameSize()));
                         bank[s.ordinal()][i] = c;
-                    } catch (Exception ignored) {
-                        // 无音频设备（如无头环境）时静默降级，游戏逻辑照常运行
-                        bank[s.ordinal()][i] = null;
-                    }
+                    } catch (Exception ignored) { }
                 }
             }
         }
@@ -712,10 +1368,12 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
             if (c == null) return;
             if (c.isRunning()) c.stop();
             c.setFramePosition(0);
-            c.start();                       // 非阻塞，不占用 Swing 事件线程
+            c.start();
         }
 
         boolean isMuted() { return muted; }
+
+        void setMuted(boolean m) { muted = m; }
 
         void toggleMute() {
             muted = !muted;
@@ -726,10 +1384,9 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
             }
         }
 
-        /** 线性扫频 + 软化方波 + 衰减包络，模拟复古芯片音 */
         private static byte[] render(Sound s) {
             switch (s) {
-                case SHOOT: {                     // 短促下滑的「啾」
+                case SHOOT: {
                     double dur = 0.10, f0 = 900, f1 = 190;
                     double k = (f1 - f0) / dur;
                     return synth(dur, 0.50, t -> {
@@ -739,7 +1396,7 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
                         return (sq * 0.85 + buzz) * Math.pow(1 - t / dur, 2.0);
                     });
                 }
-                case HIT: {                       // 带噪声的爆炸
+                case HIT: {
                     double dur = 0.14, f0 = 460, f1 = 70;
                     double k = (f1 - f0) / dur;
                     return synth(dur, 0.55, t -> {
@@ -749,7 +1406,7 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
                         return (sq * 0.55 + noise * 0.22) * Math.pow(1 - t / dur, 1.6);
                     });
                 }
-                case LOSE: {                      // 低沉的失误音
+                case LOSE: {
                     double dur = 0.30, f0 = 210, f1 = 55;
                     double k = (f1 - f0) / dur;
                     return synth(dur, 0.55, t -> {
@@ -758,7 +1415,7 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
                         return sq * Math.pow(1 - t / dur, 1.2);
                     });
                 }
-                case POWER: {                     // 上行的拾取琶音
+                case POWER: {
                     double dur = 0.22, f0 = 420, f1 = 1250;
                     double k = (f1 - f0) / dur;
                     return synth(dur, 0.45, t -> {
@@ -767,7 +1424,7 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
                         return sq * Math.pow(1 - t / dur, 1.0);
                     });
                 }
-                case BOOM: {                      // 厚重的炸弹轰鸣
+                case BOOM: {
                     double dur = 0.45, f0 = 160, f1 = 32;
                     double k = (f1 - f0) / dur;
                     return synth(dur, 0.65, t -> {
@@ -788,8 +1445,8 @@ public class PixelShooter extends JPanel implements ActionListener, KeyListener 
                 double t = i / FORMAT.getSampleRate();
                 double v = Math.max(-1.0, Math.min(1.0, wave.applyAsDouble(t) * gain));
                 short sample = (short) (v * Short.MAX_VALUE);
-                out[2 * i] = (byte) (sample & 0xFF);          // 低字节
-                out[2 * i + 1] = (byte) ((sample >>> 8) & 0xFF); // 高字节
+                out[2 * i] = (byte) (sample & 0xFF);
+                out[2 * i + 1] = (byte) ((sample >>> 8) & 0xFF);
             }
             return out;
         }
