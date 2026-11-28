@@ -25,7 +25,7 @@ jobs:
       - name: Build DEB
         run: |
           jpackage --type deb \
-            --name PixelShooter --app-version 2.0 \
+            --name PixelShooter --app-version 2.1 \
             --input pkg-in --main-jar PixelShooter.jar --main-class PixelShooter \
             --description "A java mini game - pixel shooter" \
             --linux-deb-maintainer "313682119+SashaMC-Minecraft@users.noreply.github.com" \
@@ -39,18 +39,17 @@ jobs:
       - name: Build RPM
         run: |
           jpackage --type rpm \
-            --name PixelShooter --app-version 2.0 \
+            --name PixelShooter --app-version 2.1 \
             --input pkg-in --main-jar PixelShooter.jar --main-class PixelShooter \
             --description "A java mini game - pixel shooter" \
             --linux-shortcut --linux-menu-group Game \
             --java-options "-Dsun.java2d.uiScale=1.0" \
             --dest out
 
-      - name: Upload assets to Release v2.0
+      - name: Upload assets to Release v2.1
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -la out/
-          gh release upload v2.0 out/*.deb out/*.rpm --clobber
-          gh release view v2.0
-
+          gh release upload v2.1 out/*.deb out/*.rpm --clobber
+          gh release view v2.1

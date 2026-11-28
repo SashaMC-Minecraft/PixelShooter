@@ -5,19 +5,10 @@ on:
 
 jobs:
   macos-packages:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            arch: AppleSilicon
-          - os: macos-13
-            arch: Intel
-    runs-on: ${{ matrix.os }}
+    # Intel Mac 暂不提供，仅构建 Apple Silicon 版本
+    runs-on: macos-latest
     permissions:
       contents: write
-    env:
-      ASSET: PixelShooter-macOS-${{ matrix.arch }}-v2.0.zip
     steps:
       - uses: actions/checkout@v4
 
@@ -35,7 +26,7 @@ jobs:
       - name: Build .app bundle
         run: |
           jpackage --type app-image \
-            --name PixelShooter --app-version 2.0 \
+            --name PixelShooter --app-version 2.1 \
             --input pkg-in --main-jar PixelShooter.jar --main-class PixelShooter \
             --vendor "SashaMC-Minecraft" \
             --java-options "-Dsun.java2d.uiScale=1.0" \
@@ -45,12 +36,12 @@ jobs:
       - name: Zip app bundle
         run: |
           cd out
-          ditto -c -k --sequesterRsrc --keepParent PixelShooter.app "$ASSET"
+          ditto -c -k --sequesterRsrc --keepParent PixelShooter.app PixelShooter-macOS-AppleSilicon-v2.1.zip
           ls -la
 
-      - name: Upload asset to Release v2.0
+      - name: Upload asset to Release v2.1
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload v2.0 "out/$ASSET" --clobber
-          echo "uploaded: $ASSET"
+          gh release upload v2.1 "out/PixelShooter-macOS-AppleSilicon-v2.1.zip" --clobber
+          echo "uploaded PixelShooter-macOS-AppleSilicon-v2.1.zip"
